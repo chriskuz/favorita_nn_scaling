@@ -1,3 +1,4 @@
+#### IMPORTS ####
 import pandas as pd
 import numpy as np
 import time
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-
+#### HELPER FUNCTIONS ####
 def pre_merge_clean_holidays(df):
     df["date"] = pd.to_datetime(df["date"]).dt.date
 
@@ -71,6 +72,9 @@ def post_merge_cleaning(df):
 
 
 
+
+
+#### BASE DATAFRAMEFUNCTIONS ####
 def run_base_df():
     transx = pd.read_csv("../data/transactions.csv")
     stores = pd.read_csv("../data/stores.csv")
@@ -84,9 +88,11 @@ def run_base_df():
     dated_dfs = [transx, oil, holidays, training] #oil, holidays,
     # testing["date"] = pd.to_datetime(testing["date"]) #this is to show how we'll tag our testing df with all the pre-processing we need {A function will be the result of housing all the cleaning}
 
+    #Convert date to datetime in eligible dfs
     for df in dated_dfs:
         df["date"] = pd.to_datetime(df["date"]).dt.date
         # print(type(df["date"][0]))
+
 
     holidays = pre_merge_clean_holidays(holidays)
     oil = pre_merge_clean_oil(oil)
@@ -103,3 +109,11 @@ def run_base_df():
     base_df = post_merge_cleaning(base_df)
 
     return base_df
+
+
+#### MODELINING FUNCTIONS ####
+def sarimax_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+    pass
+
+def lstm_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+    pass
