@@ -42,3 +42,7 @@ PROJECT RESULTS
 
 ## Chosen Models and Performance Analysis
 
+
+# Bibliography (Relevant Links and Work)
+
+[Mean Absolute Scaled Error (MASE) in Forecasting](https://medium.com/@ashishdce/mean-absolute-scaled-error-mase-in-forecasting-8f3aecc21968)
