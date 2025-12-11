@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 #### HELPER FUNCTIONS ####
-def pre_merge_clean_holidays(df):
+def _pre_merge_clean_holidays(df):
     df["date"] = pd.to_datetime(df["date"]).dt.date
 
     df["description"] = df["description"].str.replace(r'\+\d+$', '', regex=True) #removes +n from specific holidays
@@ -24,7 +24,7 @@ def pre_merge_clean_holidays(df):
     return df
 
 
-def pre_merge_clean_oil(df):
+def _pre_merge_clean_oil(df):
     df["date"] = pd.to_datetime(df["date"]).dt.date
     
     df = df.interpolate(method="linear")
@@ -33,7 +33,7 @@ def pre_merge_clean_oil(df):
     
     return df
 
-def pre_merge_clean_stores(df):
+def _pre_merge_clean_stores(df):
     new_stores_col_names = {
         "type":"store_type",
         "cluster":"store_cluster",
@@ -43,7 +43,7 @@ def pre_merge_clean_stores(df):
 
     return df
 
-def post_merge_cleaning(df):
+def _post_merge_cleaning(df):
     ##interpolate oil  
     df = df.interpolate(method="linear")
 
@@ -94,9 +94,9 @@ def run_base_df():
         # print(type(df["date"][0]))
 
 
-    holidays = pre_merge_clean_holidays(holidays)
-    oil = pre_merge_clean_oil(oil)
-    stores = pre_merge_clean_stores(stores)
+    holidays = _pre_merge_clean_holidays(holidays)
+    oil = _pre_merge_clean_oil(oil)
+    stores = _pre_merge_clean_stores(stores)
 
     #Training
     print("Training")
@@ -106,7 +106,7 @@ def run_base_df():
     base_df = pd.merge(base_df, oil, on="date", how="left")
     base_df = pd.merge(base_df, holidays, on="date", how="left")
 
-    base_df = post_merge_cleaning(base_df)
+    base_df = _post_merge_cleaning(base_df)
 
     return base_df
 
