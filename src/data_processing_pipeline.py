@@ -133,15 +133,7 @@ def run_base_df():
 
 
 #### MODELINING FUNCTIONS ####
-def sarimax_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
-    pass
-
-def lstm_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
-    pass
-
-
-
-def sinlge_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+def antiquated_single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     
     ##Apply filter
     base_df = base_df[
@@ -248,3 +240,14 @@ def sinlge_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_da
     y_test.fillna(0, inplace=True)
 
     return X_train, y_train, X_test, y_test
+
+
+
+def sarimax_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+    pass
+
+def lstm_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+    pass
+
+
+
