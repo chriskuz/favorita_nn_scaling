@@ -30,6 +30,12 @@ PROJECT RESULTS
 
 - the steps of cleaning
 
+Model Fix
+- revision of model encoding and cleaning:
+    - it was discovered that there may be a simulated economic crash happening based on an error towards the end that changes nulls to 0
+        - will ffill and see what that looks like. Will also observe what the issue looked like previously when the error was sustained
+    - model complexity could be reduced due to the isolation towards one store meaning the location should remain the same
+
 # Modeling
 
 ## Overall Considerations

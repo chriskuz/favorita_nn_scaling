@@ -6,6 +6,16 @@ import time
 import os
 from pathlib import Path
 
+
+from pmdarima import auto_arima
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import make_scorer, mean_squared_error, mean_squared_log_error
+from sklearn.model_selection import cross_val_score
+from statsmodels.tsa.stattools import adfuller
+
+
 import torch
 
 #### HELPER FUNCTIONS ####
@@ -111,9 +121,130 @@ def run_base_df():
     return base_df
 
 
+
+
+
+
+
+
+
+
+
+
+
 #### MODELINING FUNCTIONS ####
 def sarimax_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     pass
 
 def lstm_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     pass
+
+
+
+def sinlge_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+    
+    ##Apply filter
+    base_df = base_df[
+        (base_df["store_nbr"] == model_filter[0]) &
+        (base_df["family"] == model_filter[1])
+    ]
+
+    ##Assert date_index
+    base_df["date_index"] = base_df["date"]
+    base_df.set_index("date_index", inplace=True)
+
+    ##One hot cols
+    one_hot_columns = [
+        "family",
+        "city",
+        "state",
+        "store_type",
+        "holiday_type",
+        "locale",
+        "locale_name",
+        "holiday_description",
+        "transferred"
+    ]
+    one_hot_prep_df = base_df[one_hot_columns]
+    one_hot_prep_df = one_hot_prep_df.fillna("no_holiday")
+    encoder = OneHotEncoder()
+    encoded = encoder.fit_transform(base_df[one_hot_columns])
+    encoded_dense = encoded.toarray()
+    encoded_df = pd.DataFrame(encoded_dense, columns=encoder.get_feature_names_out(one_hot_columns), index=base_df.index)
+
+
+    ##Day of Week encoding
+    base_df["date"] = pd.to_datetime(base_df["date"]) #redundancy due to bug?
+    base_df["day_of_week"] = base_df["date"].dt.day_name()
+    DAY_OF_WEEK_HIERARCHY_DICT = {
+        "Sunday":1, 
+        "Monday":2,
+        "Tuesday":3,
+        "Wednesday":4,
+        "Thursday":5,
+        "Friday":6,
+        "Saturday":7
+    }
+    niche_df = base_df.copy()
+    niche_df = niche_df[["day_of_week"]]
+    niche_df["day_of_week_hierarchy_encoded"] = niche_df["day_of_week"].map(DAY_OF_WEEK_HIERARCHY_DICT)
+    niche_df["day_of_week_sine"] = np.sin(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
+    niche_df["day_of_week_cosine"] = np.cos(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
+    niche_df.drop(columns=["day_of_week", "day_of_week_hierarchy_encoded"], inplace=True)
+
+
+
+    ##Model_df generation
+    model_df = base_df.copy()
+    model_df = model_df[["date", "family", "sales", "dol_per_barrel", "rolling_15day_avg_traffic", "rolling_30day_avg_traffic", "store_nbr"]]
+
+    #Weird redundant cleaning, but it works (this step will repeat)
+    model_df = model_df[~model_df.index.duplicated(keep="first")]
+    
+    #Concat
+    model_df = pd.concat([model_df, niche_df, encoded_df], axis=1)
+
+    #Weird redundant cleaning, but it works (this step will repeat)
+    model_df = model_df[~model_df.index.duplicated(keep="first")]
+    model_df.dropna(inplace=True)
+    model_df.sort_values(by=["date", "store_nbr", "family"], ascending=True)
+
+    #n_date cutting (train, test, split)
+    first_n_dates = model_df["date"].drop_duplicates().head(first_n_dates) 
+    last_n_dates = model_df["date"].drop_duplicates().tail(last_n_dates) 
+    model_train = model_df[
+        (~model_df["date"].isin(first_n_dates)) &
+        (~model_df["date"].isin(last_n_dates))
+    ]
+    model_test = model_df[
+        (model_df["date"].isin(last_n_dates))
+    ]
+    X_train = model_train.drop(columns=["sales", "family", "date"])
+    y_train = model_train["sales"]
+    X_test = model_test.drop(columns=["sales", "family", "date"])
+    y_test = model_test["sales"]
+
+    #Weird redundant cleaning, but it works (this step will repeat)
+    X_train.dropna(inplace=True)
+    y_train.dropna(inplace=True)
+    X_test.dropna(inplace=True)
+    y_test.dropna(inplace=True)
+
+    #Set index frequency encoding
+    X_train = X_train.asfreq("D")
+    y_train = y_train.asfreq("D")
+
+    X_test = X_test.asfreq("D")
+    y_test = y_test.asfreq("D")
+
+    #Weird redundant cleaning, but it works (this step will repeat)
+    X_train.drop_duplicates(keep="first")
+    y_train.drop_duplicates(keep="first")
+    X_test.drop_duplicates(keep="first")
+    y_test.drop_duplicates(keep="first")
+    X_train.fillna(0, inplace=True)
+    y_train.fillna(0, inplace=True)
+    X_test.fillna(0, inplace=True)
+    y_test.fillna(0, inplace=True)
+
+    return X_train, y_train, X_test, y_test
