@@ -55,8 +55,8 @@ def _pre_merge_clean_stores(df):
 
 def _post_merge_cleaning(df):
     ##interpolate oil  
-    df = df.interpolate(method="linear")
-    # df["dol_per_barrel"] = df["dol_per_barrel"].interpolate(method="linear").bfill()
+    # df = df.interpolate(method="linear")
+    df["dol_per_barrel"] = df["dol_per_barrel"].interpolate(method="linear").ffill().bfill()
     print(f"Post merge cleaning with 2nd interpolation of oil pricing...")
     print(f"Corresponding null count of df is: {df.isnull().sum()}")
 
@@ -124,40 +124,40 @@ def run_base_df():
     return base_df
 
 
-def run_base_df():
-    transx = pd.read_csv("../data/transactions.csv")
-    stores = pd.read_csv("../data/stores.csv")
-    oil = pd.read_csv("../data/oil.csv")
-    holidays = pd.read_csv("../data/holidays_events.csv")
+# def run_base_df():
+#     transx = pd.read_csv("../data/transactions.csv")
+#     stores = pd.read_csv("../data/stores.csv")
+#     oil = pd.read_csv("../data/oil.csv")
+#     holidays = pd.read_csv("../data/holidays_events.csv")
 
-    training = pd.read_csv("../data/train.csv")
-    # testing = pd.read_csv("../data/test.csv")
-    # sample = pd.read_csv("../data/sample_submission.csv")
+#     training = pd.read_csv("../data/train.csv")
+#     # testing = pd.read_csv("../data/test.csv")
+#     # sample = pd.read_csv("../data/sample_submission.csv")
 
-    dated_dfs = [transx, oil, holidays, training] #oil, holidays,
-    # testing["date"] = pd.to_datetime(testing["date"]) #this is to show how we'll tag our testing df with all the pre-processing we need {A function will be the result of housing all the cleaning}
+#     dated_dfs = [transx, oil, holidays, training] #oil, holidays,
+#     # testing["date"] = pd.to_datetime(testing["date"]) #this is to show how we'll tag our testing df with all the pre-processing we need {A function will be the result of housing all the cleaning}
 
-    #Convert date to datetime in eligible dfs
-    for df in dated_dfs:
-        df["date"] = pd.to_datetime(df["date"]).dt.date
-        # print(type(df["date"][0]))
+#     #Convert date to datetime in eligible dfs
+#     for df in dated_dfs:
+#         df["date"] = pd.to_datetime(df["date"]).dt.date
+#         # print(type(df["date"][0]))
 
 
-    holidays = _pre_merge_clean_holidays(holidays)
-    oil = _pre_merge_clean_oil(oil)
-    stores = _pre_merge_clean_stores(stores)
+#     holidays = _pre_merge_clean_holidays(holidays)
+#     oil = _pre_merge_clean_oil(oil)
+#     stores = _pre_merge_clean_stores(stores)
 
-    #Training
-    print("Training")
-    base_df = pd.merge(training, stores, on="store_nbr", how="inner")
-    base_df = base_df.set_index("id")
-    base_df = pd.merge(base_df, transx, on=["date", "store_nbr"], how="inner")
-    base_df = pd.merge(base_df, oil, on="date", how="left")
-    base_df = pd.merge(base_df, holidays, on="date", how="left")
+#     #Training
+#     print("Training")
+#     base_df = pd.merge(training, stores, on="store_nbr", how="inner")
+#     base_df = base_df.set_index("id")
+#     base_df = pd.merge(base_df, transx, on=["date", "store_nbr"], how="inner")
+#     base_df = pd.merge(base_df, oil, on="date", how="left")
+#     base_df = pd.merge(base_df, holidays, on="date", how="left")
 
-    base_df = _post_merge_cleaning(base_df)
+#     base_df = _post_merge_cleaning(base_df)
 
-    return base_df
+#     return base_df
 
 
 
@@ -166,7 +166,7 @@ def run_base_df():
 
 
 #### MODELINING FUNCTIONS ####
-def antiquated_single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
+def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     
     ##Apply filter
     base_df = base_df[
