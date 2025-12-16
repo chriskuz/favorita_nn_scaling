@@ -252,67 +252,85 @@ def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_da
 
 #Preps for neural net
 def multi_store_pre_process(base_df, model_family="GROCERY I", target_stores=[44, 45, 46], first_n_dates=30, last_n_dates=15):
+    print(f"--- Pipeline Start ---")
+    print(f"Target Stores: {target_stores}")
+    
+    # 1. Apply Filter
     base_df = base_df[
         (base_df["store_nbr"].isin(target_stores)) &
         (base_df["family"] == model_family)
     ].copy()
+    
+    # CRITICAL FIX: Reset Index to ensure 0,1,2... alignment
+    # This prevents the "silent delete" bug during concatenation
+    base_df = base_df.reset_index(drop=True)
 
     base_df["date"] = pd.to_datetime(base_df["date"])
-    # base_df["date_index"] = base_df["date"]
-    # base_df.set_index("date_index", inplace=True)
-
+    print(f"Filtered Shape: {base_df.shape}")
+    
+    # 2. One Hot Encoding
     one_hot_columns = [
         "city", "state", "store_type", "holiday_type",
         "locale", "locale_name", "holiday_description", "transferred"
     ]
-
-    # base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday")
-    # Clean string nulls AND force everything to string (Fixes the Bool/Str error)
     base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday").astype(str)
-
+    
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
     encoded_dense = encoder.fit_transform(base_df[one_hot_columns])
+    
     encoded_df = pd.DataFrame(
         encoded_dense, 
         columns=encoder.get_feature_names_out(one_hot_columns), 
-        index=base_df.index
+        index=base_df.index # Safe now because we reset index!
     )
 
+    # 3. Concatenate
     features = ["date", "sales", "dol_per_barrel", "rolling_15day_avg_traffic", 
                 "rolling_30day_avg_traffic", "store_nbr", "store_cluster"]
-    
     model_df = base_df[features].copy()
-
-
     model_df = pd.concat([model_df, encoded_df], axis=1)
 
-    # model_df = model_df[~model_df.index.duplicated(keep="first")]
+    # 4. Clean & Sort
+    initial_len = len(model_df)
     model_df.dropna(inplace=True)
+    print(f"Dropped {initial_len - len(model_df)} rows due to NaNs (Expected for first 30 days)")
+    
     model_df.sort_values(by=["store_nbr", "date"], ascending=True)
 
+    # 5. CYCLIC FEATURES
+    day_of_week = model_df["date"].dt.day_of_week + 1
+    model_df["day_of_week_sine"] = np.sin(2 * np.pi * day_of_week / 7)
+    model_df["day_of_week_cosine"] = np.cos(2 * np.pi * day_of_week / 7)
+
+    # 6. Train/Test Split
     unique_dates = model_df["date"].drop_duplicates().sort_values()
+    
+    # Safety Check: Do we have enough dates?
+    if len(unique_dates) <= last_n_dates:
+        raise ValueError(f"Not enough dates! Total unique dates: {len(unique_dates)}, Required: {last_n_dates}")
 
-    train_end_date = unique_dates.iloc[-(last_n_dates + 1)] # Leave space for test
-
+    train_end_date = unique_dates.iloc[-(last_n_dates + 1)]
+    print(f"Splitting Train/Test at: {train_end_date}")
+    
     model_train = model_df[model_df["date"] <= train_end_date]
     model_test = model_df[model_df["date"] > train_end_date]
 
+    # 7. Final Cleanup
     X_train = model_train.drop(columns=["sales", "date"])
     y_train = model_train["sales"]
-
     X_test = model_test.drop(columns=["sales", "date"])
     y_test = model_test["sales"]
-
-    X_train = X_train.fillna(0) # Safer than ffill across store boundaries
+    
+    X_train = X_train.fillna(0)
     X_test = X_test.fillna(0)
-
-    X_train = _add_cyclical(X_train)
-    X_test = _add_cyclical(X_test)
 
     X_train = X_train.astype(float)
     X_test = X_test.astype(float)
     y_train = y_train.astype(float)
     y_test = y_test.astype(float)
+    
+    print(f"Final X_train shape: {X_train.shape}")
+    print(f"Final X_test shape: {X_test.shape}")
 
     return X_train, y_train, X_test, y_test
 
