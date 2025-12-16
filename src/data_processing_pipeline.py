@@ -57,8 +57,7 @@ def _post_merge_cleaning(df):
     ##interpolate oil  
     # df = df.interpolate(method="linear")
     df["dol_per_barrel"] = df["dol_per_barrel"].interpolate(method="linear").ffill().bfill()
-    print(f"Post merge cleaning with 2nd interpolation of oil pricing...")
-    print(f"Corresponding null count of df is: {df.isnull().sum()}")
+    
 
     df["date"] = pd.to_datetime(df["date"]) #re-instantiatind a pliable format
 
@@ -84,7 +83,7 @@ def _post_merge_cleaning(df):
     return df
 
 
-
+#for single model processing
 def _cyclic_week_encoder(df_index):
     day_of_week = df_index.day_of_week + 1 #applies a number corresponding to a given day in the week (useful multiplier for sine/cosine usage)
     sine = np.sin(2 * np.pi * day_of_week / 7)
@@ -92,6 +91,13 @@ def _cyclic_week_encoder(df_index):
     
     return sine, cosine
 
+#for multivariate model processing
+def _add_cyclical(df):
+    day_of_week = df.index.day_of_week + 1
+    df["day_of_week_sine"] = np.sin(2 * np.pi * day_of_week / 7)
+    df["day_of_week_cosine"] = np.cos(2 * np.pi * day_of_week / 7)
+    
+    return df
 
 def _drop_zero_variance_cols(df):
     constant_cols = df.columns[df.nunique() <= 1]
@@ -143,6 +149,8 @@ def run_base_df():
 
 
 #### MODELINING FUNCTIONS ####
+
+#Preps for SARIMAX
 def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     
     ##Apply filter
@@ -242,15 +250,71 @@ def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_da
 
 
 
+#Preps for neural net
+def multi_store_pre_process(base_df, model_family="GROCERY I", target_stores=[44, 45, 46], first_n_dates=30, last_n_dates=15):
+    base_df = base_df[
+        (base_df["store_nbr"].isin(target_stores)) &
+        (base_df["family"] == model_family)
+    ].copy()
+
+    base_df["date"] = pd.to_datetime(base_df["date"])
+    base_df["date_index"] = base_df["date"]
+    base_df.set_index("date_index", inplace=True)
+
+    one_hot_columns = [
+        "city", "state", "store_type", "holiday_type",
+        "locale", "locale_name", "holiday_description", "transferred"
+    ]
+
+    base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday")
+
+    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    encoded_dense = encoder.fit_transform(base_df[one_hot_columns])
+    encoded_df = pd.DataFrame(
+        encoded_dense, 
+        columns=encoder.get_feature_names_out(one_hot_columns), 
+        index=base_df.index
+    )
+
+    features = ["date", "sales", "dol_per_barrel", "rolling_15day_avg_traffic", 
+                "rolling_30day_avg_traffic", "store_nbr", "store_cluster"]
+    
+    model_df = base_df[features].copy()
 
 
+    model_df = pd.concat([model_df, encoded_df], axis=1)
+
+    model_df = model_df[~model_df.index.duplicated(keep="first")]
+    model_df.dropna(inplace=True)
+    model_df.sort_values(by=["store_nbr", "date"], ascending=True)
+
+    unique_dates = model_df["date"].drop_duplicates().sort_values()
+
+    train_end_date = unique_dates.iloc[-(last_n_dates + 1)] # Leave space for test
+
+    model_train = model_df[model_df["date"] <= train_end_date]
+    model_test = model_df[model_df["date"] > train_end_date]
+
+    X_train = model_train.drop(columns=["sales", "date"])
+    y_train = model_train["sales"]
+
+    X_test = model_test.drop(columns=["sales", "date"])
+    y_test = model_test["sales"]
+
+    X_train = X_train.fillna(0) # Safer than ffill across store boundaries
+    X_test = X_test.fillna(0)
+
+    X_train = _add_cyclical(X_train)
+    X_test = _add_cyclical(X_test)
+
+    X_train = X_train.astype(float)
+    X_test = X_test.astype(float)
+    y_train = y_train.astype(float)
+    y_test = y_test.astype(float)
+
+    return X_train, y_train, X_test, y_test
 
 
-
-
-
-def sarimax_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
-    pass
 
 def lstm_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
     pass
