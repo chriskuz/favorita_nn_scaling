@@ -93,6 +93,11 @@ def _cyclic_week_encoder(df_index):
     return sine, cosine
 
 
+def _drop_zero_variance_cols(df):
+    constant_cols = df.columns[df.nunique() <= 1]
+    return df.drop(columns=constant_cols, errors="ignore")
+
+
 
 
 #### BASE DATAFRAMEFUNCTIONS ####
@@ -170,26 +175,6 @@ def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_da
     encoded_df = pd.DataFrame(encoded_dense, columns=encoder.get_feature_names_out(one_hot_columns), index=base_df.index)
 
 
-    # ##Day of Week encoding
-    # base_df["date"] = pd.to_datetime(base_df["date"]) #redundancy due to bug?
-    # base_df["day_of_week"] = base_df["date"].dt.day_name()
-    # DAY_OF_WEEK_HIERARCHY_DICT = {
-    #     "Sunday":1, 
-    #     "Monday":2,
-    #     "Tuesday":3,
-    #     "Wednesday":4,
-    #     "Thursday":5,
-    #     "Friday":6,
-    #     "Saturday":7
-    # }
-    # niche_df = base_df.copy()
-    # niche_df = niche_df[["day_of_week"]]
-    # niche_df["day_of_week_hierarchy_encoded"] = niche_df["day_of_week"].map(DAY_OF_WEEK_HIERARCHY_DICT)
-    # niche_df["day_of_week_sine"] = np.sin(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
-    # niche_df["day_of_week_cosine"] = np.cos(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
-    # niche_df.drop(columns=["day_of_week", "day_of_week_hierarchy_encoded"], inplace=True)
-
-
     ##Model_df generation
     model_df = base_df.copy()
     model_df = model_df[["date", "family", "sales", "dol_per_barrel", "rolling_15day_avg_traffic", "rolling_30day_avg_traffic", "store_nbr"]]
@@ -203,202 +188,61 @@ def single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_da
     first_n_dates_list = unique_dates.head(first_n_dates)
     last_n_dates_list = unique_dates.tail(last_n_dates)
 
-    #double check if this line is necessary
+
     model_train = model_df[
         (~model_df["date"].isin(first_n_dates_list)) &
         (~model_df["date"].isin(last_n_dates_list))
     ]
 
-
     model_test = model_df[
         (model_df["date"].isin(last_n_dates_list))
     ]
-
-    #Concat
-    model_df = pd.concat([model_df, niche_df, encoded_df], axis=1)
-
-    #Weird redundant cleaning, but it works (this step will repeat)
-    model_df = model_df[~model_df.index.duplicated(keep="first")]
-    model_df.dropna(inplace=True)
-    model_df.sort_values(by=["date", "store_nbr", "family"], ascending=True)
-
-
     
-
-
-
-    #n_date cutting (train, test, split)
-    first_n_dates = model_df["date"].drop_duplicates().head(first_n_dates) 
-    last_n_dates = model_df["date"].drop_duplicates().tail(last_n_dates) 
-    model_train = model_df[
-        (~model_df["date"].isin(first_n_dates)) &
-        (~model_df["date"].isin(last_n_dates))
-    ]
-    model_test = model_df[
-        (model_df["date"].isin(last_n_dates))
-    ]
-    X_train = model_train.drop(columns=["sales", "family", "date"])
+    X_train = model_train.drop(columns=["sales", "date"]) #remove target value from main; drops date as we only need the index now
     y_train = model_train["sales"]
-    X_test = model_test.drop(columns=["sales", "family", "date"])
+    X_test = model_test.drop(columns=["sales", "date"]) #remove target value from main; drops date as we only need the index now
     y_test = model_test["sales"]
 
-    #Weird redundant cleaning, but it works (this step will repeat)
-    X_train.dropna(inplace=True)
-    y_train.dropna(inplace=True)
-    X_test.dropna(inplace=True)
-    y_test.dropna(inplace=True)
-
-    #Set index frequency encoding
     X_train = X_train.asfreq("D")
     y_train = y_train.asfreq("D")
-
     X_test = X_test.asfreq("D")
     y_test = y_test.asfreq("D")
     
 
-    #Forward fill nulls for missing indexed dates
     X_train = X_train.ffill()
     y_train = y_train.fillna(0)
     X_test = X_test.ffill()
     y_test = y_test.fillna(0)
 
+    training_sine, training_cosine = _cyclic_week_encoder(X_train.index)
+    testing_sine, testing_cosine = _cyclic_week_encoder(X_test.index)
+
+    X_train["day_of_week_sine"] = training_sine
+    X_train["day_of_week_cosine"] = training_cosine
+    X_test["day_of_week_sine"] = testing_sine
+    X_test["day_of_week_cosine"] = testing_cosine
+    
+
+    #Final feature reduction
+    X_train = X_train.drop(columns=["store_nbr", "store_cluster"], errors='ignore') #specific callouts
+    X_test = X_test.drop(columns=["store_nbr", "store_cluster"], errors='ignore') #specific callouts
+
+    X_train = _drop_zero_variance_cols(X_train) #finds all zero deviated columns (removing constants)
+
+    common_cols = X_train.columns.intersection(X_test.columns)
+    X_train = X_train[common_cols]
+    X_test = X_test[common_cols]
+
+    X_train = X_train.astype(float)
+    X_test = X_test.astype(float)
+    y_train = y_train.astype(float)
+    y_test = y_test.astype(float)
+
     return X_train, y_train, X_test, y_test
 
 
 
 
-def debug_single_model_pre_process(base_df, model_filter=[45, "GROCERY I"], first_n_dates=30, last_n_dates=15):
-    
-    ##Apply filter
-    base_df = base_df[
-        (base_df["store_nbr"] == model_filter[0]) &
-        (base_df["family"] == model_filter[1])
-    ]
-    print(f"1) Corresponding null count of base_df in modeling is: {base_df.isnull().sum().sum()}")
-
-    ##Assert date_index
-    base_df["date_index"] = base_df["date"]
-    base_df.set_index("date_index", inplace=True)
-    print(f"2) Corresponding null count of base_df in modeling is: {base_df.isnull().sum().sum()}")
-
-    ##One hot cols
-    one_hot_columns = [
-        "family",
-        "city",
-        "state",
-        "store_type",
-        "holiday_type",
-        "locale",
-        "locale_name",
-        "holiday_description",
-        "transferred"
-    ]
-    one_hot_prep_df = base_df[one_hot_columns]
-    one_hot_prep_df = one_hot_prep_df.fillna("no_holiday")
-    encoder = OneHotEncoder()
-    encoded = encoder.fit_transform(base_df[one_hot_columns])
-    encoded_dense = encoded.toarray()
-    encoded_df = pd.DataFrame(encoded_dense, columns=encoder.get_feature_names_out(one_hot_columns), index=base_df.index)
-    print(f"3) Corresponding null count of the encoded_df in modeling is: {encoded_df.isnull().sum().sum()}")
-
-    ##Day of Week encoding
-    base_df["date"] = pd.to_datetime(base_df["date"]) #redundancy due to bug?
-    base_df["day_of_week"] = base_df["date"].dt.day_name()
-    DAY_OF_WEEK_HIERARCHY_DICT = {
-        "Sunday":1, 
-        "Monday":2,
-        "Tuesday":3,
-        "Wednesday":4,
-        "Thursday":5,
-        "Friday":6,
-        "Saturday":7
-    }
-    niche_df = base_df.copy()
-    niche_df = niche_df[["day_of_week"]]
-    niche_df["day_of_week_hierarchy_encoded"] = niche_df["day_of_week"].map(DAY_OF_WEEK_HIERARCHY_DICT)
-    niche_df["day_of_week_sine"] = np.sin(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
-    niche_df["day_of_week_cosine"] = np.cos(2 * np.pi * niche_df["day_of_week_hierarchy_encoded"] / 7)
-    niche_df.drop(columns=["day_of_week", "day_of_week_hierarchy_encoded"], inplace=True)
-    print(f"4) Corresponding null count of the nice_df in modeling is: {niche_df.isnull().sum().sum()}")
-
-
-    ##Model_df generation
-    model_df = base_df.copy()
-    model_df = model_df[["date", "family", "sales", "dol_per_barrel", "rolling_15day_avg_traffic", "rolling_30day_avg_traffic", "store_nbr"]]
-    print(f"5) Corresponding null count of the model_df in modeling is: {model_df.isnull().sum().sum()}")
-
-    #Weird redundant cleaning, but it works (this step will repeat)
-    model_df = model_df[~model_df.index.duplicated(keep="first")]
-    print(f"6) Corresponding null count of the model_df in modeling is: {model_df.isnull().sum().sum()}")
-    
-    #Concat
-    model_df = pd.concat([model_df, niche_df, encoded_df], axis=1)
-    print(f"7) Corresponding null count of the model_df in modeling is: {model_df.isnull().sum().sum()}")
-
-    #Weird redundant cleaning, but it works (this step will repeat)
-    model_df = model_df[~model_df.index.duplicated(keep="first")]
-    print(f"8) Corresponding null count of the model_df in modeling is: {model_df.isnull().sum().sum()}")
-    model_df.dropna(inplace=True)
-    print(f"9) Corresponding null count of the model_df in modeling is: {model_df.isnull().sum().sum()}")
-    model_df.sort_values(by=["date", "store_nbr", "family"], ascending=True)
-
-    #n_date cutting (train, test, split)
-    first_n_dates = model_df["date"].drop_duplicates().head(first_n_dates) 
-    last_n_dates = model_df["date"].drop_duplicates().tail(last_n_dates) 
-    model_train = model_df[
-        (~model_df["date"].isin(first_n_dates)) &
-        (~model_df["date"].isin(last_n_dates))
-    ]
-    print(f"10) Corresponding null count of the model_df in modeling is: {model_train.isnull().sum().sum()}")
-    model_test = model_df[
-        (model_df["date"].isin(last_n_dates))
-    ]
-    print(f"11) Corresponding null count of the model_df in modeling is: {model_test.isnull().sum().sum()}")
-    X_train = model_train.drop(columns=["sales", "family", "date"])
-    y_train = model_train["sales"]
-    X_test = model_test.drop(columns=["sales", "family", "date"])
-    y_test = model_test["sales"]
-
-    #Weird redundant cleaning, but it works (this step will repeat)
-    X_train.dropna(inplace=True)
-    y_train.dropna(inplace=True)
-    X_test.dropna(inplace=True)
-    y_test.dropna(inplace=True)
-    print(f"12) Corresponding null count of the X_train in modeling is: {X_train.isnull().sum().sum()}")
-    print(f"13) Corresponding null count of the y_train in modeling is: {y_train.isnull().sum().sum()}")
-    print(f"14) Corresponding null count of the X_test in modeling is: {X_test.isnull().sum().sum()}")
-    print(f"15) Corresponding null count of the y_test in modeling is: {y_test.isnull().sum().sum()}")
-
-    #Set index frequency encoding
-    X_train = X_train.asfreq("D")
-    y_train = y_train.asfreq("D")
-    print(f"16) Corresponding null count of the X_train in modeling is: {X_train.isnull().sum().sum()}")
-    print(f"17) Corresponding null count of the y_train in modeling is: {y_train.isnull().sum().sum()}")
-
-    X_test = X_test.asfreq("D")
-    y_test = y_test.asfreq("D")
-    print(f"18) Corresponding null count of the X_test in modeling is: {X_test.isnull().sum().sum()}")
-    print(f"19) Corresponding null count of the y_test in modeling is: {y_test.isnull().sum().sum()}")
-
-    #Weird redundant cleaning, but it works (this step will repeat)
-    X_train.drop_duplicates(keep="first")
-    y_train.drop_duplicates(keep="first")
-    X_test.drop_duplicates(keep="first")
-    y_test.drop_duplicates(keep="first")
-    print(f"20) Corresponding null count of the X_train in modeling is: {X_train.isnull().sum().sum()}")
-    print(f"21) Corresponding null count of the y_train in modeling is: {y_train.isnull().sum().sum()}")
-    print(f"22) Corresponding null count of the X_test in modeling is: {X_test.isnull().sum().sum()}")
-    print(f"23) Corresponding null count of the y_test in modeling is: {y_test.isnull().sum().sum()}")
-    X_train.fillna(0, inplace=True)
-    y_train.fillna(0, inplace=True)
-    X_test.fillna(0, inplace=True)
-    y_test.fillna(0, inplace=True)
-    print(f"24) Corresponding null count of the X_train in modeling is: {X_train.isnull().sum().sum()}")
-    print(f"25) Corresponding null count of the y_train in modeling is: {y_train.isnull().sum().sum()}")
-    print(f"26) Corresponding null count of the X_test in modeling is: {X_test.isnull().sum().sum()}")
-    print(f"27) Corresponding null count of the y_test in modeling is: {y_test.isnull().sum().sum()}")
-
-    return X_train, y_train, X_test, y_test
 
 
 

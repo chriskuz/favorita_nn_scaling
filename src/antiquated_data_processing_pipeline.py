@@ -55,8 +55,8 @@ def _pre_merge_clean_stores(df):
 
 def _post_merge_cleaning(df):
     ##interpolate oil  
-    # df = df.interpolate(method="linear")
-    df["dol_per_barrel"] = df["dol_per_barrel"].interpolate(method="linear").ffill().bfill()
+    df = df.interpolate(method="linear")
+    # df["dol_per_barrel"] = df["dol_per_barrel"].interpolate(method="linear").ffill().bfill()
     
 
     df["date"] = pd.to_datetime(df["date"]) #re-instantiatind a pliable format
