@@ -258,15 +258,17 @@ def multi_store_pre_process(base_df, model_family="GROCERY I", target_stores=[44
     ].copy()
 
     base_df["date"] = pd.to_datetime(base_df["date"])
-    base_df["date_index"] = base_df["date"]
-    base_df.set_index("date_index", inplace=True)
+    # base_df["date_index"] = base_df["date"]
+    # base_df.set_index("date_index", inplace=True)
 
     one_hot_columns = [
         "city", "state", "store_type", "holiday_type",
         "locale", "locale_name", "holiday_description", "transferred"
     ]
 
-    base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday")
+    # base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday")
+    # Clean string nulls AND force everything to string (Fixes the Bool/Str error)
+    base_df[one_hot_columns] = base_df[one_hot_columns].fillna("no_holiday").astype(str)
 
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
     encoded_dense = encoder.fit_transform(base_df[one_hot_columns])
@@ -284,7 +286,7 @@ def multi_store_pre_process(base_df, model_family="GROCERY I", target_stores=[44
 
     model_df = pd.concat([model_df, encoded_df], axis=1)
 
-    model_df = model_df[~model_df.index.duplicated(keep="first")]
+    # model_df = model_df[~model_df.index.duplicated(keep="first")]
     model_df.dropna(inplace=True)
     model_df.sort_values(by=["store_nbr", "date"], ascending=True)
 
